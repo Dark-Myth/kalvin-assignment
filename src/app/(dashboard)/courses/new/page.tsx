@@ -30,6 +30,17 @@ export default function NewCoursePage() {
     setIsLoading(true);
 
     try {
+
+      interface Course {
+        id: string;
+        title: string;
+        description: string;
+        category: string; // Added category property
+        coverImage: string;
+        modules: [];
+        createdAt: string;
+        updatedAt: string;
+      }
       const newCourse: Course = {
         id: uuidv4(),
         title,
