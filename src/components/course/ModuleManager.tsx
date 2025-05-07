@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Course, Module } from '@/types/course';
 import { useCourseStore } from '@/lib/store/courseStore';
+import { generateModuleContent } from '@/lib/services/openai';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -14,7 +15,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { PlusCircle, FileText, GripVertical, ChevronDown, ChevronUp, Pencil} from 'lucide-react';
+import { PlusCircle, FileText, GripVertical, ChevronDown, ChevronUp, Pencil, Sparkles, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import ModuleEditor from '@/components/course/ModuleEditor';
 
 interface ModuleManagerProps {
@@ -33,7 +35,8 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
   const { addModule, updateModule } = useCourseStore();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
-  
+  const [isGenerating, setIsGenerating] = useState(false);
+
   // Define form
   const form = useForm<z.infer<typeof moduleFormSchema>>({
     resolver: zodResolver(moduleFormSchema),
@@ -44,7 +47,7 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
       estimatedTime: 30,
     },
   });
-  
+
   // Reset form when dialog opens/closes
   const handleDialogChange = (open: boolean) => {
     setIsDialogOpen(open);
@@ -52,7 +55,7 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
       form.reset();
     }
   };
-  
+
   // Form submission handler
   const onSubmit = (values: z.infer<typeof moduleFormSchema>) => {
     const newModule: Module = {
@@ -65,30 +68,56 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
       estimatedTime: values.estimatedTime,
       order: course.modules.length,
     };
-    
+
     addModule(course.id, newModule);
     handleDialogChange(false);
+    toast.success('Module created successfully!');
   };
-  
+
+  // Function to handle module creation with AI
+  const handleGenerateModule = async () => {
+    setIsGenerating(true);
+
+    try {
+      const generatedContent = await generateModuleContent({
+        topic: course.title,
+        description: course.description,
+      });
+
+      if (generatedContent && generatedContent.title) {
+        form.setValue('title', generatedContent.title);
+        form.setValue('description', generatedContent.description || '');
+        toast.success('Module content generated successfully!');
+      } else {
+        toast.error('Failed to generate module content. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error generating module content:', error);
+      toast.error('Failed to generate module content. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   // Re-order modules
   const moveModule = (moduleId: string, direction: 'up' | 'down') => {
     const moduleIndex = course.modules.findIndex(m => m.id === moduleId);
-    
+
     if (
       (direction === 'up' && moduleIndex === 0) ||
       (direction === 'down' && moduleIndex === course.modules.length - 1)
     ) {
       return; // Cannot move further up/down
     }
-    
-    const newOrder = [...course.modules].map(m => ({...m}));
+
+    const newOrder = [...course.modules].map(m => ({ ...m }));
     const targetIndex = direction === 'up' ? moduleIndex - 1 : moduleIndex + 1;
-    
+
     // Swap order values
     const temp = newOrder[moduleIndex].order;
     newOrder[moduleIndex].order = newOrder[targetIndex].order;
     newOrder[targetIndex].order = temp;
-    
+
     // Update each modified module
     newOrder.forEach(module => {
       updateModule(course.id, module.id, { order: module.order });
@@ -99,23 +128,23 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
   const handleEditModule = (module: Module) => {
     setSelectedModule(module);
   };
-  
+
   // Close module editor
   const handleCloseModuleEditor = () => {
     setSelectedModule(null);
   };
-  
+
   // Sort modules by order
   const sortedModules = [...course.modules].sort((a, b) => a.order - b.order);
 
   return (
-    <>
+    <div className="bg-white">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Modules</h2>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>
             <Button>
-              <PlusCircle className="mr-2 h-4 w-4" /> 
+              <PlusCircle className="mr-2 h-4 w-4" />
               Add Module
             </Button>
           </DialogTrigger>
@@ -126,7 +155,7 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                 Add a new module to organize related lessons in your course.
               </DialogDescription>
             </DialogHeader>
-            
+
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
                 <FormField
@@ -142,7 +171,7 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                     </FormItem>
                   )}
                 />
-                
+
                 <FormField
                   control={form.control}
                   name="description"
@@ -150,17 +179,17 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                     <FormItem>
                       <FormLabel>Module Description</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="This module covers..." 
+                        <Textarea
+                          placeholder="This module covers..."
                           className="min-h-[100px]"
-                          {...field} 
+                          {...field}
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -169,10 +198,7 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                       <FormItem>
                         <FormLabel>Difficulty</FormLabel>
                         <FormControl>
-                          <Select 
-                            onValueChange={field.onChange} 
-                            defaultValue={field.value}
-                          >
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <SelectTrigger>
                               <SelectValue placeholder="Select difficulty" />
                             </SelectTrigger>
@@ -187,7 +213,7 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                       </FormItem>
                     )}
                   />
-                  
+
                   <FormField
                     control={form.control}
                     name="estimatedTime"
@@ -195,34 +221,49 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                       <FormItem>
                         <FormLabel>Estimated Time (minutes)</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            min="1"
-                            {...field}
-                          />
+                          <Input type="number" min="1" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
-                
+
                 <DialogFooter className="pt-4">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    
                     onClick={() => handleDialogChange(false)}
                   >
                     Cancel
                   </Button>
                   <Button type="submit">Create Module</Button>
+                  <Button
+                    type="button"
+                    
+                    onClick={handleGenerateModule}
+                    disabled={isGenerating}
+                    className="gap-2"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        <span>Generate with AI</span>
+                      </>
+                    )}
+                  </Button>
                 </DialogFooter>
               </form>
             </Form>
           </DialogContent>
         </Dialog>
       </div>
-      
+
       <div className="space-y-4">
         {sortedModules.length === 0 ? (
           <Card>
@@ -248,17 +289,17 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                     <CardTitle>{module.title}</CardTitle>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Button 
-                      size="icon" 
-                      variant="ghost"
+                    <Button
+                      size="icon"
+                      
                       onClick={() => moveModule(module.id, 'up')}
                       disabled={index === 0}
                     >
                       <ChevronUp className="h-4 w-4" />
                     </Button>
-                    <Button 
-                      size="icon" 
-                      variant="ghost"
+                    <Button
+                      size="icon"
+                      
                       onClick={() => moveModule(module.id, 'down')}
                       disabled={index === sortedModules.length - 1}
                     >
@@ -287,8 +328,8 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
                 </div>
               </CardContent>
               <CardFooter className="border-t flex justify-end space-x-2 py-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  
                   size="sm"
                   onClick={() => handleEditModule(module)}
                 >
@@ -300,16 +341,16 @@ export default function ModuleManager({ course }: ModuleManagerProps) {
           ))
         )}
       </div>
-      
+
       {/* Module Editor Dialog */}
       {selectedModule && (
-        <ModuleEditor 
-          courseId={course.id} 
-          module={selectedModule} 
-          isOpen={!!selectedModule} 
-          onClose={handleCloseModuleEditor} 
+        <ModuleEditor
+          courseId={course.id}
+          module={selectedModule}
+          isOpen={!!selectedModule}
+          onClose={handleCloseModuleEditor}
         />
       )}
-    </>
+    </div>
   );
 }

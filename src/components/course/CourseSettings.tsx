@@ -65,7 +65,7 @@ export default function CourseSettings({ course }: CourseSettingsProps) {
   };
   
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 ">
       <Card>
         <CardHeader>
           <CardTitle>Publication Settings</CardTitle>
@@ -102,7 +102,6 @@ export default function CourseSettings({ course }: CourseSettingsProps) {
         <CardContent className="space-y-4">
           <div className="flex flex-col space-y-2">
             <Button 
-              variant="outline" 
               className="justify-start"
               onClick={exportCourse}
               disabled={isExporting}
@@ -121,7 +120,7 @@ export default function CourseSettings({ course }: CourseSettingsProps) {
           </p>
           <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button>
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Course
               </Button>
@@ -142,13 +141,11 @@ export default function CourseSettings({ course }: CourseSettingsProps) {
               </div>
               <DialogFooter>
                 <Button 
-                  variant="outline" 
                   onClick={() => setIsDeleteDialogOpen(false)}
                 >
                   Cancel
                 </Button>
                 <Button 
-                  variant="outline"
                   onClick={deleteCourse}
                 >
                   Delete Permanently

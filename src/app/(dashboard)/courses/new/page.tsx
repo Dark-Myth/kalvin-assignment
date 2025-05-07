@@ -3,140 +3,179 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
-import { useCourseStore } from '@/lib/store/courseStore';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-
-// Form validation schema
-const formSchema = z.object({
-  title: z.string().min(3, {
-    message: 'Course title must be at least 3 characters.',
-  }),
-  description: z.string().min(10, {
-    message: 'Course description must be at least 10 characters.',
-  }),
-});
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useCourseStore } from '@/lib/store/courseStore';
+import { Course } from '@/types/course';
+import { generateCourseIdea } from '@/lib/services/openai';
+import { Sparkles, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function NewCoursePage() {
   const router = useRouter();
   const { addCourse } = useCourseStore();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Define form
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      title: '',
-      description: '',
-    },
-  });
 
-  // Form submission handler
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    setIsSubmitting(true);
-    
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('development');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
     try {
-      // Create new course
-      const newCourse = {
+      const newCourse: Course = {
         id: uuidv4(),
-        title: values.title,
-        description: values.description,
+        title,
+        description,
+        category,
+        coverImage: `/images/${category}.jpg`,
         modules: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        published: false,
       };
-      
-      // Add to store
+
       addCourse(newCourse);
       
-      // Redirect to course edit page
+      toast.success('Course created successfully!');
       router.push(`/courses/${newCourse.id}`);
     } catch (error) {
-      console.error('Failed to create course:', error);
+      toast.error('Failed to create course');
+      setIsLoading(false);
+    }
+  };
+
+  const handleGenerateCourseIdea = async () => {
+    setIsGenerating(true);
+    
+    try {
+      const courseIdea = await generateCourseIdea(category);
+      
+      if (courseIdea.title && courseIdea.description) {
+        setTitle(courseIdea.title);
+        setDescription(courseIdea.description);
+        toast.success('Course idea generated!');
+      } else {
+        toast.error('Failed to generate course idea');
+      }
+    } catch (error) {
+      toast.error('Error generating course idea');
     } finally {
-      setIsSubmitting(false);
+      setIsGenerating(false);
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Create New Course</CardTitle>
-          <CardDescription>
-            Start by adding basic information about your course
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Course Title</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="Introduction to AI" 
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      This will be displayed as the main title of your course.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Course Description</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        placeholder="This course covers the fundamental concepts of artificial intelligence..." 
-                        className="min-h-[120px]"
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Provide a detailed description of what students will learn.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <div className="flex justify-end space-x-4 pt-4">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => router.back()}
+    <div className="container py-10 bg-white">
+      <div className="max-w-2xl mx-auto">
+        <h1 className="text-3xl font-bold mb-6">Create New Course</h1>
+        
+        <Card>
+          <form onSubmit={handleSubmit}>
+            <CardHeader>
+              <CardTitle>Course Details</CardTitle>
+              <CardDescription>
+                Provide information about your new course
+              </CardDescription>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  
+                  onClick={handleGenerateCourseIdea}
+                  disabled={isGenerating}
+                  className="flex items-center gap-2"
                 >
-                  Cancel
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Creating...' : 'Create Course'}
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Generating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      <span>Generate Course Idea</span>
+                    </>
+                  )}
                 </Button>
               </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="title">Course Title</Label>
+                <Input
+                  id="title"
+                  placeholder="Introduction to Web Development"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="description">Course Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="A comprehensive introduction to modern web development..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={5}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Select
+                  value={category}
+                  onValueChange={setCategory}
+                  
+                >
+                  <SelectTrigger className='bg-white'>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent className='bg-white'>
+                    <SelectItem value="development">Development</SelectItem>
+                    <SelectItem value="design">Design</SelectItem>
+                    <SelectItem value="business">Business</SelectItem>
+                    <SelectItem value="marketing">Marketing</SelectItem>
+                    <SelectItem value="photography">Photography</SelectItem>
+                    <SelectItem value="music">Music</SelectItem>
+                    <SelectItem value="health">Health & Fitness</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-between">
+              <Button 
+                 
+                type="button" 
+                onClick={() => router.back()}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={isLoading || !title.trim() || !description.trim()}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating Course...
+                  </>
+                ) : (
+                  'Create Course'
+                )}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }

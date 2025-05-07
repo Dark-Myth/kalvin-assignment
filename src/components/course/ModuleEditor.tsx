@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Module, Lesson } from '@/types/course';
 import { useCourseStore } from '@/lib/store/courseStore';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { generateLessonContent } from '@/lib/services/openai';
+import { Dialog, DialogContent, DialogDescription,  DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { PlusCircle, BookOpen, Settings, Lightbulb, GripVertical, ChevronUp, ChevronDown, Pencil} from 'lucide-react';
+import { PlusCircle, BookOpen, Settings, Lightbulb, GripVertical, ChevronUp, ChevronDown, Pencil, Sparkles, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import LessonEditor from '@/components/course/LessonEditor';
 
 interface ModuleEditorProps {
@@ -44,7 +46,8 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
   const [activeTab, setActiveTab] = useState('details');
   const [isNewLessonDialogOpen, setIsNewLessonDialogOpen] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
-  
+  const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
+
   // Module edit form
   const moduleForm = useForm<z.infer<typeof moduleFormSchema>>({
     resolver: zodResolver(moduleFormSchema),
@@ -55,7 +58,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
       estimatedTime: module.estimatedTime,
     },
   });
-  
+
   // Lesson creation form
   const lessonForm = useForm<z.infer<typeof lessonFormSchema>>({
     resolver: zodResolver(lessonFormSchema),
@@ -64,7 +67,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
       description: '',
     },
   });
-  
+
   // Save module details
   const onSaveModuleDetails = (values: z.infer<typeof moduleFormSchema>) => {
     updateModule(courseId, module.id, {
@@ -74,7 +77,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
       estimatedTime: values.estimatedTime,
     });
   };
-  
+
   // Create new lesson
   const onCreateLesson = (values: z.infer<typeof lessonFormSchema>) => {
     const newLesson: Lesson = {
@@ -86,50 +89,74 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
       activities: [],
       order: module.lessons.length,
     };
-    
+
     addLesson(courseId, module.id, newLesson);
     setIsNewLessonDialogOpen(false);
     lessonForm.reset();
   };
-  
+
+  // Generate lesson using AI
+  const onGenerateLesson = async () => {
+    setIsGeneratingLesson(true);
+    try {
+      const generatedLesson = await generateLessonContent(module.title);
+      const newLesson: Lesson = {
+        id: uuidv4(),
+        title: generatedLesson.title,
+        description: generatedLesson.description,
+        content: generatedLesson.content,
+        learningOutcomes: generatedLesson.learningOutcomes,
+        activities: generatedLesson.activities,
+        order: module.lessons.length,
+      };
+
+      addLesson(courseId, module.id, newLesson);
+      toast.success('Lesson generated successfully!');
+    } catch (error) {
+      toast.error('Failed to generate lesson. Please try again.');
+    } finally {
+      setIsGeneratingLesson(false);
+    }
+  };
+
   // Reorder lessons
   const moveLesson = (lessonId: string, direction: 'up' | 'down') => {
     const lessonIndex = module.lessons.findIndex(l => l.id === lessonId);
-    
+
     if (
       (direction === 'up' && lessonIndex === 0) ||
       (direction === 'down' && lessonIndex === module.lessons.length - 1)
     ) {
       return; // Cannot move further up/down
     }
-    
-    const newOrder = [...module.lessons].map(l => ({...l}));
+
+    const newOrder = [...module.lessons].map(l => ({ ...l }));
     const targetIndex = direction === 'up' ? lessonIndex - 1 : lessonIndex + 1;
-    
+
     // Swap order values
     const temp = newOrder[lessonIndex].order;
     newOrder[lessonIndex].order = newOrder[targetIndex].order;
     newOrder[targetIndex].order = temp;
-    
+
     // Update each modified lesson
     newOrder.forEach(lesson => {
       updateLesson(courseId, module.id, lesson.id, { order: lesson.order });
     });
   };
-  
+
   // Edit lesson
   const handleEditLesson = (lesson: Lesson) => {
     setSelectedLesson(lesson);
   };
-  
+
   // Close lesson editor
   const handleCloseLessonEditor = () => {
     setSelectedLesson(null);
   };
-  
+
   // Sort lessons by order
   const sortedLessons = [...module.lessons].sort((a, b) => a.order - b.order);
-  
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -140,7 +167,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
               Manage module details and organize lessons within this module
             </DialogDescription>
           </DialogHeader>
-          
+
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
             <TabsList className="grid grid-cols-2 mb-4">
               <TabsTrigger value="details" className="flex items-center gap-2">
@@ -152,7 +179,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                 <span>Lessons</span>
               </TabsTrigger>
             </TabsList>
-            
+
             {/* Module Details Tab */}
             <TabsContent value="details" className="space-y-4">
               <Form {...moduleForm}>
@@ -170,7 +197,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                       </FormItem>
                     )}
                   />
-                  
+
                   <FormField
                     control={moduleForm.control}
                     name="description"
@@ -178,10 +205,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                       <FormItem>
                         <FormLabel>Module Description</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            className="min-h-[100px]"
-                            {...field} 
-                          />
+                          <Textarea className="min-h-[100px]" {...field} />
                         </FormControl>
                         <FormDescription>
                           Provide a clear overview of what this module covers
@@ -190,7 +214,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                       </FormItem>
                     )}
                   />
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={moduleForm.control}
@@ -199,10 +223,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                         <FormItem>
                           <FormLabel>Difficulty</FormLabel>
                           <FormControl>
-                            <Select 
-                              onValueChange={field.onChange} 
-                              defaultValue={field.value}
-                            >
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select difficulty" />
                               </SelectTrigger>
@@ -217,7 +238,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                         </FormItem>
                       )}
                     />
-                    
+
                     <FormField
                       control={moduleForm.control}
                       name="estimatedTime"
@@ -225,46 +246,48 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                         <FormItem>
                           <FormLabel>Estimated Time (minutes)</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="number" 
-                              min="1"
-                              {...field}
-                            />
+                            <Input type="number" min="1" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
                   </div>
-                  
+
                   <div className="flex justify-end pt-4">
-                    <Button type="submit">
-                      Save Changes
-                    </Button>
+                    <Button type="submit">Save Changes</Button>
                   </div>
                 </form>
               </Form>
             </TabsContent>
-            
+
             {/* Lessons Tab */}
             <TabsContent value="lessons" className="space-y-4">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Module Lessons</h3>
-                <Button onClick={() => setIsNewLessonDialogOpen(true)}>
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Add Lesson
-                </Button>
+                <div className="flex space-x-2">
+                  <Button onClick={() => setIsNewLessonDialogOpen(true)}>
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    Add Lesson
+                  </Button>
+                  <Button onClick={onGenerateLesson} disabled={isGeneratingLesson}>
+                    {isGeneratingLesson ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-4 w-4" />
+                    )}
+                    Generate Lesson
+                  </Button>
+                </div>
               </div>
-              
+
               <div className="space-y-3">
                 {sortedLessons.length === 0 ? (
                   <Card>
                     <CardContent className="flex flex-col items-center justify-center p-8 text-center">
                       <Lightbulb className="h-12 w-12 text-muted-foreground mb-3" />
                       <h4 className="text-lg font-medium mb-2">No Lessons Yet</h4>
-                      <p className="text-muted-foreground mb-4">
-                        Add your first lesson to this module
-                      </p>
+                      <p className="text-muted-foreground mb-4">Add your first lesson to this module</p>
                       <Button onClick={() => setIsNewLessonDialogOpen(true)}>
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Add Lesson
@@ -281,18 +304,18 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                             <CardTitle className="text-base">{lesson.title}</CardTitle>
                           </div>
                           <div className="flex items-center space-x-1">
-                            <Button 
-                              size="icon" 
-                              variant="ghost" 
+                            <Button
+                              size="icon"
+                              
                               className="h-8 w-8"
                               onClick={() => moveLesson(lesson.id, 'up')}
                               disabled={index === 0}
                             >
                               <ChevronUp className="h-4 w-4" />
                             </Button>
-                            <Button 
-                              size="icon" 
-                              variant="ghost" 
+                            <Button
+                              size="icon"
+                              
                               className="h-8 w-8"
                               onClick={() => moveLesson(lesson.id, 'down')}
                               disabled={index === sortedLessons.length - 1}
@@ -301,15 +324,13 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                             </Button>
                           </div>
                         </div>
-                        <CardDescription className="ml-6 truncate">
-                          {lesson.description}
-                        </CardDescription>
+                        <CardDescription className="ml-6 truncate">{lesson.description}</CardDescription>
                       </CardHeader>
                       <CardFooter className="pt-0">
                         <div className="flex justify-end w-full">
-                          <Button 
-                            size="sm" 
-                            variant="outline"
+                          <Button
+                            size="sm"
+                            
                             onClick={() => handleEditLesson(lesson)}
                             className="text-xs"
                           >
@@ -326,17 +347,15 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
           </Tabs>
         </DialogContent>
       </Dialog>
-      
+
       {/* Create New Lesson Dialog */}
       <Dialog open={isNewLessonDialogOpen} onOpenChange={setIsNewLessonDialogOpen}>
         <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle>Create New Lesson</DialogTitle>
-            <DialogDescription>
-              Add a lesson to the &quot;{module.title}&quot; module
-            </DialogDescription>
+            <DialogDescription>Add a lesson to the &quot;{module.title}&quot; module</DialogDescription>
           </DialogHeader>
-          
+
           <Form {...lessonForm}>
             <form onSubmit={lessonForm.handleSubmit(onCreateLesson)} className="space-y-4 py-4">
               <FormField
@@ -352,7 +371,7 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={lessonForm.control}
                 name="description"
@@ -360,34 +379,24 @@ export default function ModuleEditor({ courseId, module, isOpen, onClose }: Modu
                   <FormItem>
                     <FormLabel>Lesson Description</FormLabel>
                     <FormControl>
-                      <Textarea 
-                        placeholder="This lesson will cover..." 
-                        className="min-h-[100px]"
-                        {...field} 
-                      />
+                      <Textarea placeholder="This lesson will cover..." className="min-h-[100px]" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <div className="flex justify-end space-x-2 pt-4">
-                <Button 
-                  type="button"
-                  variant="outline" 
-                  onClick={() => setIsNewLessonDialogOpen(false)}
-                >
+                <Button type="button"  onClick={() => setIsNewLessonDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">
-                  Create Lesson
-                </Button>
+                <Button type="submit">Create Lesson</Button>
               </div>
             </form>
           </Form>
         </DialogContent>
       </Dialog>
-      
+
       {/* Lesson Editor Dialog */}
       {selectedLesson && (
         <LessonEditor
